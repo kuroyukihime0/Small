@@ -5,7 +5,7 @@ android {
     buildToolsVersion "23.0.1"
 
     defaultConfig {
-        minSdkVersion 9
+        minSdkVersion 11
         targetSdkVersion 23
         applicationId "net.wequick.example.small"
         versionCode 1
@@ -44,6 +44,10 @@ android {
     }
     productFlavors.all { flavor ->
         flavor.manifestPlaceholders = [UMENG_CHANNEL_VALUE: name]
+    }
+
+    dataBinding {
+        enabled true
     }
 }
 

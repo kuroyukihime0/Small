@@ -16,6 +16,7 @@
 
 package net.wequick.small;
 
+import android.app.Application;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -31,13 +32,17 @@ import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FileReader;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -68,6 +73,8 @@ public class Bundle {
     private static final String VERSION_KEY = "version";
     private static final String BUNDLES_KEY = "bundles";
     private static final String HOST_PACKAGE = "main";
+    private static final String DEFAULT_ENTRANCE_PATH = "";
+    private static final String DEFAULT_ENTRANCE_ACTIVITY = "MainActivity";
 
     private static final class Manifest {
         String version;
@@ -85,7 +92,6 @@ public class Bundle {
     private static final int MSG_COMPLETE = 1;
     private static LoadBundleHandler sHandler;
     private static LoadBundleThread sThread;
-    private static boolean sLoading;
 
     private String mPackageName;
     private String uriString;
@@ -101,6 +107,7 @@ public class Bundle {
 
     private BundleLauncher mApplicableLauncher = null;
 
+    private String mBuiltinAssetName = null;
     private File mBuiltinFile = null;
     private File mPatchFile = null;
     private File mExtractPath;
@@ -223,7 +230,8 @@ public class Bundle {
 
         boolean synchronous = (listener == null);
         if (synchronous) {
-            sLoading = true;
+            loadBundles(context);
+            return;
         }
 
         // Asynchronous
@@ -231,22 +239,6 @@ public class Bundle {
             sThread = new LoadBundleThread(context);
             sHandler = new LoadBundleHandler(listener);
             sThread.start();
-        }
-
-        if (synchronous) {
-            while (sLoading) {
-                try {
-                    Thread.sleep(100);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-            if (sUIActions != null) {
-                for (Runnable action : sUIActions) {
-                    action.run();
-                }
-                sUIActions = null;
-            }
         }
     }
 
@@ -302,11 +294,9 @@ public class Bundle {
         Manifest manifest = parseManifest(manifestData);
         if (manifest == null) return;
 
-        loadBundles(manifest.bundles);
-    }
+        setupLaunchers(context);
 
-    protected static Boolean isLoadingAsync() {
-        return (sThread != null);
+        loadBundles(manifest.bundles);
     }
 
     private static Manifest parseManifest(JSONObject data) {
@@ -358,8 +348,17 @@ public class Bundle {
         sBundleLaunchers.add(launcher);
     }
 
+    protected static void onCreateLaunchers(Application app) {
+        if (sBundleLaunchers == null) return;
+
+        for (BundleLauncher launcher : sBundleLaunchers) {
+            launcher.onCreate(app);
+        }
+    }
+
     protected static void setupLaunchers(Context context) {
         if (sBundleLaunchers == null) return;
+
         for (BundleLauncher launcher : sBundleLaunchers) {
             launcher.setUp(context);
         }
@@ -369,6 +368,10 @@ public class Bundle {
         if (sPreloadBundles != null) {
             for (Bundle bundle : sPreloadBundles) {
                 if (bundle.matchesRule(uri)) {
+                    if (bundle.mApplicableLauncher == null) {
+                        break;
+                    }
+
                     if (!bundle.enabled) return null; // Illegal bundle (invalid signature, etc.)
                     return bundle;
                 }
@@ -405,32 +408,29 @@ public class Bundle {
         if (this.uriString == null || !uriString.startsWith(this.uriString)) return false;
 
         String srcPath = uriString.substring(this.uriString.length());
-        String srcQuery = uri.getQuery();
+        String srcQuery = uri.getEncodedQuery();
         if (srcQuery != null) {
             srcPath = srcPath.substring(0, srcPath.length() - srcQuery.length() - 1);
         }
 
         String dstPath = null;
         String dstQuery = srcQuery;
-        if (srcPath.equals("")) {
-            dstPath = srcPath;
-        } else {
-            for (String key : this.rules.keySet()) {
-                // TODO: regex match and replace
-                if (key.equals(srcPath)) dstPath = this.rules.get(key);
-                if (dstPath != null) break;
-            }
-            if (dstPath == null) return false;
 
-            int index = dstPath.indexOf("?");
-            if (index > 0) {
-                if (dstQuery != null) {
-                    dstQuery = dstQuery + "&" + dstPath.substring(index + 1);
-                } else {
-                    dstQuery = dstPath.substring(index + 1);
-                }
-                dstPath = dstPath.substring(0, index);
+        for (String key : this.rules.keySet()) {
+            // TODO: regex match and replace
+            if (key.equals(srcPath)) dstPath = this.rules.get(key);
+            if (dstPath != null) break;
+        }
+        if (dstPath == null) return false;
+
+        int index = dstPath.indexOf("?");
+        if (index > 0) {
+            if (dstQuery != null) {
+                dstQuery = dstQuery + "&" + dstPath.substring(index + 1);
+            } else {
+                dstQuery = dstPath.substring(index + 1);
             }
+            dstPath = dstPath.substring(0, index);
         }
 
         this.path = dstPath;
@@ -457,6 +457,35 @@ public class Bundle {
         mApplicableLauncher.upgradeBundle(this);
     }
 
+    private void extractBundle(String assetName, File outFile) throws IOException {
+        InputStream in = Small.getContext().getAssets().open(assetName);
+        FileOutputStream out;
+        if (outFile.exists()) {
+            // Compare the two input steams to see if needs re-extract.
+            FileInputStream fin = new FileInputStream(outFile);
+            int inSize = in.available();
+            long outSize = fin.available();
+            if (inSize == outSize) {
+                // FIXME: What about the size is same but the content is different?
+                return; // UP-TO-DATE
+            }
+
+            out = new FileOutputStream(outFile);
+        } else {
+            out = new FileOutputStream(outFile);
+        }
+
+        // Extract left data
+        byte[] buffer = new byte[1024];
+        int read;
+        while ((read = in.read(buffer)) != -1) {
+            out.write(buffer, 0, read);
+        }
+        out.flush();
+        out.close();
+        in.close();
+    }
+
     private void initWithMap(JSONObject map) throws JSONException {
         if (sUserBundlesPath == null) { // Lazy init
             sUserBundlesPath = Small.getContext().getApplicationInfo().nativeLibraryDir;
@@ -466,10 +495,22 @@ public class Bundle {
         if (map.has("pkg")) {
             String pkg = map.getString("pkg");
             if (pkg != null && !pkg.equals(HOST_PACKAGE)) {
-                String soName = "lib" + pkg.replaceAll("\\.", "_") + ".so";
-                mBuiltinFile = new File(sUserBundlesPath, soName);
-                mPatchFile = new File(FileUtils.getDownloadBundlePath(), soName);
                 mPackageName = pkg;
+                if (Small.isLoadFromAssets()) {
+                    mBuiltinAssetName = pkg + ".apk";
+                    mBuiltinFile = new File(FileUtils.getInternalBundlePath(), mBuiltinAssetName);
+                    mPatchFile = new File(FileUtils.getDownloadBundlePath(), mBuiltinAssetName);
+                    // Extract from assets to files
+                    try {
+                        extractBundle(mBuiltinAssetName, mBuiltinFile);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                } else {
+                    String soName = "lib" + pkg.replaceAll("\\.", "_") + ".so";
+                    mBuiltinFile = new File(sUserBundlesPath, soName);
+                    mPatchFile = new File(FileUtils.getDownloadBundlePath(), soName);
+                }
             }
         }
 
@@ -487,20 +528,26 @@ public class Bundle {
         }
 
         this.rules = new HashMap<String, String>();
-        // Default rules to visit entrance page of bundle
-        this.rules.put("", "");
-        this.rules.put(".html", "");
-        this.rules.put("/index", "");
-        this.rules.put("/index.html", "");
+        String entrancePath = DEFAULT_ENTRANCE_PATH;
         if (map.has("rules")) {
             // User rules to visit other page of bundle
             JSONObject rulesObj = map.getJSONObject("rules");
             Iterator<String> it = rulesObj.keys();
             while (it.hasNext()) {
-                String key = it.next();
-                this.rules.put("/" + key, rulesObj.getString(key));
+                String from = it.next();
+                String to = rulesObj.getString(from);
+                if (from.equals(DEFAULT_ENTRANCE_PATH)) {
+                    entrancePath = to;
+                } else {
+                    this.rules.put("/" + from, to);
+				}
             }
         }
+        // Default rules to visit entrance page of bundle
+        this.rules.put(DEFAULT_ENTRANCE_PATH, entrancePath);
+        this.rules.put(".html", entrancePath);
+        this.rules.put("/index", entrancePath);
+        this.rules.put("/index.html", entrancePath);
     }
 
     protected void prepareForLaunch() {
@@ -594,16 +641,20 @@ public class Bundle {
 
     protected String getActivityName() {
         String activityName = path;
-        if (activityName == null || activityName.equals("")) {
-            activityName = entrance;
-        } else {
-            String pkg = mPackageName != null ? mPackageName : Small.getContext().getPackageName();
-            char c = activityName.charAt(0);
-            if (c == '.') {
-                activityName = pkg + activityName;
-            } else if (c >= 'A' && c <= 'Z') {
-                activityName = pkg + '.' + activityName;
+        if (activityName == null || activityName.equals(DEFAULT_ENTRANCE_PATH)) {
+            if (entrance != null) {
+                return entrance;
             }
+
+            activityName = DEFAULT_ENTRANCE_ACTIVITY;
+        }
+
+        String pkg = mPackageName != null ? mPackageName : Small.getContext().getPackageName();
+        char c = activityName.charAt(0);
+        if (c == '.') {
+            activityName = pkg + activityName;
+        } else if (c >= 'A' && c <= 'Z') {
+            activityName = pkg + '.' + activityName;
         }
         return activityName;
     }
@@ -673,6 +724,10 @@ public class Bundle {
         this.parser = parser;
     }
 
+    public String getBuiltinAssetName() {
+        return mBuiltinAssetName;
+    }
+
     //______________________________________________________________________________
     // Internal class
 
@@ -686,9 +741,7 @@ public class Bundle {
 
         @Override
         public void run() {
-            // Instantiate bundle
             loadBundles(mContext);
-            sLoading = false;
             sHandler.obtainMessage(MSG_COMPLETE).sendToTarget();
         }
     }
@@ -721,9 +774,29 @@ public class Bundle {
             sIOActions = null;
         }
 
+        // Wait for the things to be done on UI thread before `postSetUp`,
+        // as on 7.0+ we should wait a WebView been initialized. (#347)
+        while (sRunningUIActionCount != 0) {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
         // Notify `postSetUp' to all launchers
         for (BundleLauncher launcher : sBundleLaunchers) {
             launcher.postSetUp();
+        }
+
+        // Wait for the things to be done on UI thread after `postSetUp`,
+        // like creating a bundle application.
+        while (sRunningUIActionCount != 0) {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
         }
 
         // Free all unused temporary variables
@@ -738,7 +811,7 @@ public class Bundle {
     }
 
     private static List<Runnable> sIOActions;
-    private static List<Runnable> sUIActions;
+    private static int sRunningUIActionCount;
 
     protected static void postIO(Runnable action) {
         if (sIOActions == null) {
@@ -747,17 +820,29 @@ public class Bundle {
         sIOActions.add(action);
     }
 
-    protected static void postUI(Runnable action) {
-        if (sHandler.mListener == null) {
-            // The UI thread is block, records the actions for lazy run.
-            if (sUIActions == null) {
-                sUIActions = new ArrayList<Runnable>();
-            }
-            sUIActions.add(action);
-        } else {
-            Message msg = Message.obtain(sHandler, action);
-            msg.sendToTarget();
+    protected static void postUI(final Runnable action) {
+        if (sHandler == null) {
+            action.run();
+            return;
         }
+
+        beginUI();
+        Message msg = Message.obtain(sHandler, new Runnable() {
+            @Override
+            public void run() {
+                action.run();
+                commitUI();
+            }
+        });
+        msg.sendToTarget();
+    }
+
+    protected static synchronized void beginUI() {
+        sRunningUIActionCount++;
+    }
+
+    protected static synchronized void commitUI() {
+        sRunningUIActionCount--;
     }
 
     private static class LoadBundleHandler extends Handler {

@@ -62,14 +62,16 @@ public class ArscEditor extends AssetEditor {
      * @param retainedTypes the resource types to retain
      * @return
      */
-    def slice(int pp, Map idMaps, List retainedTypes) {
+    def slice(int pp, Map idMaps, Map libRefTable, List retainedTypes) {
         def t = readTable()
 
         def retainedTypeSpecs = []
         def retainedStringIds = []
+        def retainedStringEntries = [:]
         def retainedTypeIds = []
         def retainedKeyIds = []
         def retainedEntries = []
+        def libPackageIds = []
 
         // Ensure there is an `attr' typeSpec
         if (retainedTypes[0].id != 1) { // attr type id is always as `1'
@@ -144,12 +146,15 @@ public class ArscEditor extends AssetEditor {
                         if (dataType == ResValueDataType.TYPE_STRING) {
                             // String reference
                             def oldId = entry.value.data
-                            def newId = retainedStringIds.indexOf(oldId)
-                            if (newId < 0) {
+                            if (!retainedStringIds.contains(oldId)) {
                                 retainedStringIds.add(oldId)
-                                newId = retainedStringIds.size() - 1
                             }
-                            entry.value.data = newId
+
+                            def stringEntries = retainedStringEntries[oldId]
+                            if (stringEntries == null) {
+                                retainedStringEntries[oldId] = stringEntries = []
+                            }
+                            stringEntries.add(entry)
                         } else if (dataType == ResValueDataType.TYPE_REFERENCE) {
                             def id = idMaps.get(entry.value.data)
                             if (id != null) {
@@ -181,12 +186,15 @@ public class ArscEditor extends AssetEditor {
                             if (dataType == ResValueDataType.TYPE_STRING) {
                                 // String reference
                                 def oldId = it.value.data
-                                def newId = retainedStringIds.indexOf(oldId)
-                                if (newId < 0) {
+                                if (!retainedStringIds.contains(oldId)) {
                                     retainedStringIds.add(oldId)
-                                    newId = retainedStringIds.size() - 1
                                 }
-                                it.value.data = newId
+
+                                def stringEntries = retainedStringEntries[oldId]
+                                if (stringEntries == null) {
+                                    retainedStringEntries[oldId] = stringEntries = []
+                                }
+                                stringEntries.add(it)
                             } else if (dataType == ResValueDataType.TYPE_REFERENCE) {
                                 id = idMaps.get(it.value.data)
                                 if (id != null) {
@@ -194,6 +202,11 @@ public class ArscEditor extends AssetEditor {
                                             "${String.format('0x%08x', it.value.data)} -> " +
                                             "${String.format('0x%08x', id)}"
                                     it.value.data = id
+
+                                    int pid = (id >> 24)
+                                    if (pid != 0x7f && pid != 0x01 && pid != pp) {
+                                        libPackageIds.add(pid)
+                                    }
                                 }
                             }
                         }
@@ -226,7 +239,7 @@ public class ArscEditor extends AssetEditor {
         t.typeList.specs = retainedTypeSpecs
 
         // Filter string pools
-        filterStringPool(t.stringPool, retainedStringIds)
+        filterStringPool(t.stringPool, retainedStringIds, retainedStringEntries)
         filterStringPool(t.typeStringPool, retainedTypeIds)
         filterStringPool(t.keyStringPool, retainedKeyIds)
 
@@ -249,6 +262,23 @@ public class ArscEditor extends AssetEditor {
         libEntry.packageId = pp
         libEntry.packageName = t.package.name
         lib.entries.add(libEntry)
+
+        // more dynamic ref table from related libraries
+        libPackageIds.each { pid ->
+            def pname = libRefTable[pid]
+            if (pname == null) {
+                def err = "Failed to resolve package: ${String.format('0x%02x', pid)}\n"
+                libRefTable.each { id, name ->
+                    err += "  [${String.format('0x%02x', id)}] -> $name\n"
+                }
+                throw new RuntimeException(err)
+            }
+
+            lib.count ++
+            lib.header.size += LIBRARY_ENTRY_SIZE
+            lib.entries.add([packageId: pid,
+                             packageName: getUtf16String(pname, 256)])
+        }
 
         // Reset sizes & offsets
         int size = lib.header.size
@@ -702,7 +732,7 @@ public class ArscEditor extends AssetEditor {
         println "Key String Pool:"
         dumpStringPool(t.keyStringPool)
 
-        def pname = getUtf16String(t.package.name)
+        def pname = getUtf8String(t.package.name)
         def pid = t.package.id << 24
         def pidStr = "0x${Integer.toHexString(t.package.id)}"
 
@@ -713,7 +743,7 @@ public class ArscEditor extends AssetEditor {
             println "  DynamicRefTable entryCount=${lib.count}"
             lib.entries.each{ e ->
                 println "    0x${Integer.toHexString(e.packageId)} -> " +
-                        "${getUtf16String(e.packageName)}"
+                        "${getUtf8String(e.packageName)}"
             }
             println ''
         }

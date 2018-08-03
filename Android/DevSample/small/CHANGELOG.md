@@ -1,3 +1,196 @@
+## 1.5.0-beta2 (2018-07-06)
+
+Features:
+
+  - 支持 Android 9.0 (API 28)
+
+## 1.5.0-beta1 (2018-07-02)
+
+Features:
+
+  - 支持 Android 8.1 (API 27)
+
+## 1.3.0-beta6 (2018-04-24)
+
+Bugfixes:
+
+  - 修正 Android 8.0 以上，无法从内置 jar 包中读取文件的问题 (#574)
+
+## 1.3.0-beta5 (2017-12-13)
+
+Features:
+
+  - 增加 `HealthManager` 类，在资源错误引起的 crash 时打印必要的日志
+
+Bugfixes:
+
+  - 修正 7.0 多窗口模式的 crash (#548)
+  - 解决了一些特殊机型 AppTheme 问题
+
+## 1.3.0-beta3 (2017-10-28)
+
+版本同步
+
+## 1.3.0-alpha1 (2017-10-16)
+
+Features:
+
+  - 支持 Android O (8.0) (#526, @zhengxiaopeng)
+
+Bugfixes:
+
+  - 修正合并资源时可能出现的 ConcurrentModificationException (#508, @zhengxiaopeng)
+
+## 1.2.0 (2017-10-13)
+
+Bugfixes:
+
+  - 修正进程意外死亡重启后，StubActivity坑位问题 (#520, @xufan)
+
+## 1.3.0-beta2 (2017-06-16)
+
+版本同步
+
+## 1.2.0-alpha6 (2017-06-16)
+
+Bugfixes:
+
+  - 修正当前进程 Service 从后台唤起应用时未启动 Small 环境的问题
+
+## 1.3.0-beta1 (2017-06-12)
+
+版本同步
+
+## 1.2.0-alpha5 (2017-06-11)
+
+版本同步
+
+## 1.2.0-alpha4 (2017-06-06)
+
+Performance:
+
+  - 使用 BundleParser 来收集宿主 activities, 避免可能的多进程触发 AMS 调度 (#488)
+
+## 1.2.0-alpha3 (2017-05-31)
+
+版本同步
+
+## 1.2.0-alpha2 (2017-05-21)
+
+版本同步
+
+## 1.2.0-alpha1 (2017-05-21)
+
+Bugfixes:
+
+  - 修正插件升级时覆盖 so 文件的问题 (#477, @zhaoya188)
+  - 确保调用插件 Activity 前能成功拦截 Instrumentation
+
+## 1.2.0-beta5 (2017-05-13)
+
+版本同步
+
+## 1.2.0-beta4 (2017-05-09)
+
+Features:
+
+  - 支持在插件中配置 `android:configChanges` 属性
+  - 支持在 bundle.json 中的 `rules` 通过 "" key 来配置主路由
+
+Bugfixes:
+
+  - 修正在预装了 LBE 的系统上无法正确 hook mH 导致的崩溃问题 (@xufan)
+  - 修正插件manifest中未注册任何 Activity 时出现的空指针问题
+
+## 1.2.0-beta3 (2017-03-27)
+
+版本同步
+
+## 1.2.0-beta2 (2017-03-21)
+
+版本同步
+
+## 1.2.0-beta1 (2017-03-19)
+
+Bugfixes:
+
+  - 修正 7.0 下无法播放 raw 目录下视频的问题 (#429)
+
+## 1.1.0-alpha2 (2017-02-25)
+
+Bugfixes:
+
+  - 修正打包到assets下的apk包改变时未能正确被解压更新的问题
+  - 修正WebView判断加载相同url的错误
+
+Other:
+
+  - 导出WebView onProgressChanged事件
+
+## 1.1.0-alpha1 (2017-01-09)
+
+Bugfixes:
+
+  - 修正 MiUI8 资源无法合并的问题 (@xufan)
+
+## 1.1.0-beta9 (2016-11-17)
+
+Bugfixes:
+
+  - 取消使用 `SetUpActivity`, 以避免应用重启后无法传递 `savedInstanceState` 到Activity.
+
+## 1.1.0-beta8 (2016-11-15)
+
+Bugfixes:
+
+  - 修正指定了 `android:process` 的Activity/Service启动时闪退的问题 (#354, #355)
+
+## 1.1.0-beta7 (2016-11-10)
+
+Features:
+
+  - 取消使用 `SetUpProvider`, 改在宿主Application构造方法中调用 `Small.preSetUp` 来支持ContentProvider (#253)
+  - `Small.openUri` 增加返回值, false表示打开失败
+  - 支持从宿主Assets中加载插件: `Small.setLoadFromAssets(true)`
+
+## 1.1.0-beta6 (2016-11-04)
+
+Features:
+
+  - 支持通过 `TaskStackBuilder` 来透明的创建通知 (与原有代码一致)
+  - 导出 `Small.wrapIntent` 以支持自定义 `PendingIntent` 的插件化封装
+  - 支持在宿主注册插件 `ContentProvider`, 而在插件中实现该类 (#253)
+
+## 1.1.0-beta5 (2016-08-17)
+
+Bugfixes:
+
+  - 确保后台升级时能够杀死应用程序相关进程
+  - 避免 `Small.setUp` 重复调用时可能引起的 `pre-verify` 错误
+  - 修正当 `query` 被url编码后无法正确匹配 `uri` 的问题 (#222)
+
+Other:
+
+  - 引入 `Small.isFirstSetUp` 方法来判断是否首次启动
+
+## 1.1.0-beta4 (2016-08-09)
+
+Bugfixes:
+
+  - 修正无法正常启用硬件加速的问题 (#258)
+  - 修正特殊软件如`360卫士极客版`造成的插件无法启动问题 (#245)
+  - 修正当`baseUri`未设置时, `getIntentOfUri`方法空指针异常 (#246)
+
+Other:
+
+  - 插件fragment路由支持不带`.`前缀 (#236)
+
+## 1.1.0-beta3 (2016-08-01)
+
+Bugfixes:
+
+  - 修正在`5.0`以上系统可能出现的`getPooledStringForCookie`数组越界问题
+
 ## 1.1.0-beta2 (2016-07-29)
 
 Bugfixes:

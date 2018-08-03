@@ -17,6 +17,7 @@ package net.wequick.gradle
 
 import com.android.build.gradle.api.BaseVariant
 import com.android.build.gradle.internal.dsl.BuildType
+import net.wequick.gradle.tasks.CleanBundleTask
 import org.gradle.api.Project
 
 /**
@@ -39,28 +40,25 @@ abstract class BundlePlugin extends AndroidPlugin {
     }
 
     @Override
-    protected void configureProject() {
-        super.configureProject()
+    protected void afterEvaluate(boolean released) {
+        super.afterEvaluate(released)
+        if (!released) return
 
-        project.afterEvaluate {
-            if (isBuildingRelease()) {
-                BuildType buildType = android.buildTypes.find { it.name == 'release' }
+        BuildType buildType = android.buildTypes.find { it.name == 'release' }
 
-                Project hostProject = rootSmall.hostProject
-                com.android.build.gradle.BaseExtension hostAndroid = hostProject.android
-                def hostDebugBuildType = hostAndroid.buildTypes.find { it.name == 'debug' }
-                def hostReleaseBuildType = hostAndroid.buildTypes.find { it.name == 'release' }
+        Project hostProject = rootSmall.hostProject
+        com.android.build.gradle.BaseExtension hostAndroid = hostProject.android
+        def hostDebugBuildType = hostAndroid.buildTypes.find { it.name == 'debug' }
+        def hostReleaseBuildType = hostAndroid.buildTypes.find { it.name == 'release' }
 
-                // Copy host signing configs
-                def sc = hostReleaseBuildType.signingConfig ?: hostDebugBuildType.signingConfig
-                buildType.setSigningConfig(sc)
+        // Copy host signing configs
+        def sc = hostReleaseBuildType.signingConfig ?: hostDebugBuildType.signingConfig
+        buildType.setSigningConfig(sc)
 
-                // Enable minify if the command line defined `-Dbundle.minify=true'
-                def minify = System.properties['bundle.minify']
-                if (minify != null) {
-                    buildType.setMinifyEnabled(minify == 'true')
-                }
-            }
+        // Enable minify if the command line defined `-Dbundle.minify=true'
+        def minify = System.properties['bundle.minify']
+        if (minify != null) {
+            buildType.setMinifyEnabled(minify == 'true')
         }
     }
 
@@ -81,7 +79,7 @@ abstract class BundlePlugin extends AndroidPlugin {
     protected void createTask() {
         super.createTask()
 
-        project.task('cleanBundle', dependsOn: 'clean')
+        project.task('cleanBundle', type: CleanBundleTask)
         project.task('buildBundle', dependsOn: 'assembleRelease')
     }
 
@@ -94,17 +92,7 @@ abstract class BundlePlugin extends AndroidPlugin {
         def appId = variant.applicationId
         if (appId == null) return null
 
-        def arch = System.properties['bundle.arch'] // Get from command line (-Dbundle.arch=xx)
-        if (arch == null) {
-            // Read from local.properties (bundle.arch=xx)
-            def prop = new Properties()
-            prop.load(project.rootProject.file('local.properties').newDataInputStream())
-            arch = prop.getProperty('bundle.arch')
-            if (arch == null) arch = 'armeabi' // Default
-        }
-        def so = "lib${appId.replaceAll('\\.', '_')}.so"
         RootExtension rootExt = project.rootProject.small
-        def outputDir = rootExt.outputBundleDir
-        return new File(outputDir, "$arch/$so")
+        return rootExt.getBundleOutput(appId)
     }
 }
